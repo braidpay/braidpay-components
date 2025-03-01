@@ -1,15 +1,20 @@
 {
   "name": "braidpay-components",
-  "version": "0.1.33",
+  "version": "0.1.35",
   "description": "React components for BraidPay Stablecoin payment integration",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "browser": {
+    "crypto": "crypto-browserify",
+    "buffer": "buffer/",
+    "stream": "stream-browserify"
+  },
   "files": [
     "dist",
     "README.md"
   ],
-  "sideEffects": false,
+  "sideEffects": ["./polyfill.ts", "./polyfill-inject.js"],
   "scripts": {
     "build": "tsup",
     "prepublishOnly": "npm run build",
@@ -45,10 +50,12 @@
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",
     "@radix-ui/react-slot": "^1.1.2",
+    "buffer": "^6.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "crypto-browserify": "^3.12.1",
     "lucide-react": ">=0.476.0",
+    "stream-browserify": "^3.0.0",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7"
   },

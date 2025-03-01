@@ -180,21 +180,24 @@ Add the following CSS variables to your global CSS file:
 Import and use BraidPay components in your application:
 
 ```tsx
-import { PaymentForm } from 'braidpay-components';
+"use client"
+import { PaymentForm, BraidPayButton } from 'braidpay-components';
 
 export default function CheckoutPage() {
   return (
-    <PaymentForm
-      paymentLinkID="your-payment-link-id"
-      paymentLink="https://app.braidpay.com/p/your-payment-link"
-      productName="Premium Course"
-      price={99}
-      currency="$"
-      onPaymentComplete={(status) => {
-        console.log('Payment completed:', status);
-        // Handle successful payment
-      }}
-    />
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold">Checkout</h1>
+      
+      <PaymentForm
+        paymentLinkID="your-payment-link-id"
+        paymentLink="https://app.braidpay.com/p/your-payment-link"
+        productName="Premium Subscription"
+        price={99}
+        onPaymentComplete={(status) => {
+          console.log('Payment completed:', status);
+        }}
+      />
+    </div>
   );
 }
 ```
@@ -261,7 +264,8 @@ A comprehensive payment form that collects email, integrates with BraidPay, and 
 #### Example
 
 ```tsx
-import { PaymentForm } from 'braidpay-components';
+"use client"
+import { PaymentForm, BraidPayButton } from 'braidpay-components';
 
 export default function CheckoutPage() {
   return (
@@ -307,6 +311,7 @@ A simple button component that opens a dialog with a BraidPay payment iframe.
 #### Example
 
 ```tsx
+"use client"
 import { BraidPayButton } from 'braidpay-components';
 
 export default function DonationPage() {
@@ -357,6 +362,7 @@ A React hook for verifying BraidPay payment status.
 #### Example
 
 ```tsx
+"use client"
 import { usePaymentVerification } from 'braidpay-components';
 
 export default function PaymentStatus() {
@@ -413,53 +419,29 @@ export default function PaymentStatus() {
 Create a webhook handler in your Next.js app. This example uses Next.js App Router:
 
 ```tsx
-// app/api/braidpay-webhook/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { 
-  BraidPayWebhookPayload, 
-  processBraidPayWebhook 
-} from 'braidpay-components';
+"use client"
+import { processBraidPayWebhook } from 'braidpay-components';
 
-export async function POST(req: NextRequest) {
-  try {
-    const signature = req.headers.get('x-webhook-signature');
-    if (!signature) {
-      return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
-    }
-
-    const payload: BraidPayWebhookPayload = await req.json();
-    const webhookSecret = process.env.BRAIDPAY_WEBHOOK_SECRET;
-
-    if (!webhookSecret) {
-      console.error('BraidPay webhook secret not configured');
-      return NextResponse.json({ error: 'Configuration error' }, { status: 500 });
-    }
-
-    const result = await processBraidPayWebhook(payload, signature, {
-      webhookSecret,
-      onCompleted: async (payload) => {
-        if (payload.Payer_Email) {
-          // Update your database, grant access, etc.
-          console.log(`Payment completed for ${payload.Payer_Email}`);
-          
-          // Example: Update user in database
-          await updateUserSubscription(payload.Payer_Email, payload.paymentLinkID);
-          
-          // Example: Send confirmation email
-          await sendConfirmationEmail(payload.Payer_Email, payload.amount);
-        }
+export async function POST(req: Request) {
+  const signature = req.headers.get('x-webhook-signature');
+  const payload = await req.json();
+  
+  const result = await processBraidPayWebhook(
+    payload,
+    signature,
+    {
+      webhookSecret: process.env.BRAIDPAY_WEBHOOK_SECRET,
+      onCompleted: async (paymentData) => {
+        // Server-side payment processing
+        await updateDatabase(paymentData);
       }
-    });
-
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
     }
-
-    return NextResponse.json({ received: true });
-  } catch (error) {
-    console.error('Webhook error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+  );
+  
+  return new Response(JSON.stringify({ success: result.success }), {
+    status: result.success ? 200 : 400,
+    headers: { 'Content-Type': 'application/json' }
+  });
 }
 ```
 
@@ -489,19 +471,39 @@ Webhooks may be delivered multiple times for the same event. To handle this:
 const processedPayments = new Set<string>();
 
 // In your webhook handler
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   const payload: BraidPayWebhookPayload = await req.json();
   
   // Check if payment was already processed
   if (processedPayments.has(payload.paymentID)) {
-    return NextResponse.json({ received: true });
+    return new Response(JSON.stringify({ received: true }), { status: 200 });
   }
   
   // Process the payment
-  await processBraidPayWebhook(/* ... */);
-  
+  const result = await processBraidPayWebhook(
+    payload,
+    signature,
+    {
+      webhookSecret: process.env.BRAIDPAY_WEBHOOK_SECRET,
+      onCompleted: async (paymentData) => {
+        if (paymentData.Payer_Email) {
+          // Update your database, grant access, etc.
+          console.log(`Payment completed for ${paymentData.Payer_Email}`);
+          
+          // Example: Update user in database
+          await updateUserSubscription(paymentData.Payer_Email, paymentData.paymentLinkID);
+          
+          // Example: Send confirmation email
+          await sendConfirmationEmail(paymentData.Payer_Email, paymentData.amount);
+        }
+      }
+    }
+  );
+
   // Mark as processed
   processedPayments.add(payload.paymentID);
+
+  return new Response(JSON.stringify({ received: result.success }), { status: result.success ? 200 : 400 });
 }
 ```
 
@@ -514,32 +516,36 @@ If webhook processing fails:
 3. Log failed webhooks for manual review
 
 ```typescript
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     // Process webhook
-    const result = await processBraidPayWebhook(/* ... */);
+    const result = await processBraidPayWebhook(
+      payload,
+      signature,
+      {
+        webhookSecret: process.env.BRAIDPAY_WEBHOOK_SECRET,
+        onCompleted: async (paymentData) => {
+          // Server-side payment processing
+          await updateDatabase(paymentData);
+        }
+      }
+    );
     
     if (!result.success) {
       // Log error for monitoring
       console.error('Webhook processing failed:', result.error);
       
       // Return 500 to trigger retry
-      return NextResponse.json(
-        { error: result.error },
-        { status: 500 }
-      );
+      return new Response(JSON.stringify({ error: result.error }), { status: 500 });
     }
     
-    return NextResponse.json({ received: true });
+    return new Response(JSON.stringify({ received: true }), { status: 200 });
   } catch (error) {
     // Log unexpected errors
     console.error('Webhook error:', error);
     
     // Return 500 to trigger retry
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500 });
   }
 }
 ```
@@ -610,14 +616,25 @@ To test your webhook integration:
 All components accept className props for customization:
 
 ```tsx
-<PaymentForm
-  paymentLinkID="your-payment-link-id"
-  paymentLink="https://app.braidpay.com/p/your-payment-link"
-  productName="Premium Content"
-  price={49.99}
-  className="my-custom-form"
-  buttonText="Unlock Premium"
-/>
+"use client"
+import { PaymentForm, BraidPayButton } from 'braidpay-components';
+
+export default function CheckoutPage() {
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold">Checkout</h1>
+      
+      <PaymentForm
+        paymentLinkID="your-payment-link-id"
+        paymentLink="https://app.braidpay.com/p/your-payment-link"
+        productName="Premium Subscription"
+        price={99}
+        className="my-custom-form"
+        buttonText="Unlock Premium"
+      />
+    </div>
+  );
+}
 ```
 
 ### Integration with Database
@@ -666,31 +683,42 @@ onCompleted: async (payload) => {
 You can offer multiple payment options by using multiple BraidPayButton components:
 
 ```tsx
-<div className="payment-options">
-  <h3>Choose Your Payment Method</h3>
-  
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div className="p-4 border rounded-md">
-      <h4>One-time Payment</h4>
-      <p>Get lifetime access with a single payment</p>
-      <BraidPayButton
-        paymentLink="https://app.braidpay.com/p/one-time-payment-link"
-        buttonText="Pay Once ($99)"
-        className="mt-4 w-full"
-      />
+"use client"
+import { BraidPayButton } from 'braidpay-components';
+
+export default function CheckoutPage() {
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold">Checkout</h1>
+      
+      <div className="payment-options">
+        <h3>Choose Your Payment Method</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 border rounded-md">
+            <h4>One-time Payment</h4>
+            <p>Get lifetime access with a single payment</p>
+            <BraidPayButton
+              paymentLink="https://app.braidpay.com/p/one-time-payment-link"
+              buttonText="Pay Once ($99)"
+              className="mt-4 w-full"
+            />
+          </div>
+          
+          <div className="p-4 border rounded-md">
+            <h4>Subscription</h4>
+            <p>Low monthly payment with continuous updates</p>
+            <BraidPayButton
+              paymentLink="https://app.braidpay.com/p/subscription-payment-link"
+              buttonText="Subscribe ($9.99/mo)"
+              className="mt-4 w-full"
+            />
+          </div>
+        </div>
+      </div>
     </div>
-    
-    <div className="p-4 border rounded-md">
-      <h4>Subscription</h4>
-      <p>Low monthly payment with continuous updates</p>
-      <BraidPayButton
-        paymentLink="https://app.braidpay.com/p/subscription-payment-link"
-        buttonText="Subscribe ($9.99/mo)"
-        className="mt-4 w-full"
-      />
-    </div>
-  </div>
-</div>
+  );
+}
 ```
 
 ## Webhook Payload Reference
@@ -716,6 +744,128 @@ interface BraidPayWebhookPayload {
 ```
 
 ## Troubleshooting
+
+### Browser Compatibility Issues
+
+If you encounter any of these errors when using BraidPay components in a client-side context:
+
+```
+FatalRendererError: Dynamic require of "buffer" is not supported
+```
+or
+```
+ReferenceError: Can't find variable: global
+```
+
+These errors are related to Node.js specific modules being used in a browser environment. Here are some solutions:
+
+#### Solution 1: Configure Next.js to Transpile the Package
+
+In your `next.config.js`, add:
+
+```js
+const nextConfig = {
+  // ...other config
+  transpilePackages: ['braidpay-components'],
+};
+
+module.exports = nextConfig;
+```
+
+#### Solution 2: Add Polyfills for Next.js 13+
+
+For Next.js applications using the App Router, create or update your `next.config.js`:
+
+```js
+const webpack = require('webpack');
+
+const nextConfig = {
+  // ...other config
+  webpack: (config) => {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      crypto: require.resolve('crypto-browserify'),
+      buffer: require.resolve('buffer/'),
+      stream: require.resolve('stream-browserify'),
+    };
+    
+    config.plugins.push(
+      new webpack.ProvidePlugin({
+        process: 'process/browser',
+        Buffer: ['buffer', 'Buffer'],
+      })
+    );
+    
+    return config;
+  },
+};
+
+module.exports = nextConfig;
+```
+
+Also, install the needed polyfills:
+
+```bash
+npm install crypto-browserify buffer process stream-browserify
+```
+
+#### Solution 3: Server Components (Recommended)
+
+The most reliable approach is to use the webhook verification functions only in server-side code:
+
+```tsx
+// app/api/webhooks/braidpay/route.ts
+"use client"
+import { processBraidPayWebhook } from 'braidpay-components';
+
+export async function POST(req: Request) {
+  const signature = req.headers.get('x-webhook-signature');
+  const payload = await req.json();
+  
+  const result = await processBraidPayWebhook(
+    payload,
+    signature,
+    {
+      webhookSecret: process.env.BRAIDPAY_WEBHOOK_SECRET,
+      onCompleted: async (paymentData) => {
+        // Server-side payment processing
+        await updateDatabase(paymentData);
+      }
+    }
+  );
+  
+  return new Response(JSON.stringify({ success: result.success }), {
+    status: result.success ? 200 : 400,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+```
+
+And use UI components on the client side:
+
+```tsx
+// app/checkout/page.tsx (Client Component)
+"use client"
+import { PaymentForm, BraidPayButton } from 'braidpay-components';
+
+export default function CheckoutPage() {
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold">Checkout</h1>
+      
+      <PaymentForm
+        paymentLinkID="your-payment-link-id"
+        paymentLink="https://app.braidpay.com/p/your-payment-link"
+        productName="Premium Subscription"
+        price={99}
+        onPaymentComplete={(status) => {
+          console.log('Payment completed:', status);
+        }}
+      />
+    </div>
+  );
+}
+```
 
 ### Payment Dialog Not Opening
 
@@ -814,6 +964,195 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## About BraidPay
 
 [BraidPay](https://braidpay.com) is a stablecoin payment processing platform that enables businesses to accept payments in USDC, USDT, and PYUSD on multiple blockchains.
+
+## Webhook Security
+
+BraidPay webhooks include a signature to verify the authenticity of the request. Each webhook request contains a signature in the `X-Webhook-Signature` header, which is a HMAC SHA-256 hash of the payment address and amount using your webhook secret.
+
+### Signature Verification
+
+The braidpay-components package handles signature verification automatically when you use the `processBraidPayWebhook` function:
+
+```typescript
+import { processBraidPayWebhook } from 'braidpay-components';
+
+// In your webhook API route
+export async function POST(req: Request) {
+  const signature = req.headers.get('x-webhook-signature');
+  const payload = await req.json();
+  
+  const result = await processBraidPayWebhook(
+    payload,
+    signature,
+    {
+      webhookSecret: process.env.BRAIDPAY_WEBHOOK_SECRET,
+      onCompleted: async (paymentData) => {
+        // Handle completed payment
+        console.log('Payment completed:', paymentData);
+      }
+    }
+  );
+
+  if (!result.success) {
+    return new Response(JSON.stringify({ error: result.error }), { 
+      status: 400, 
+      headers: { 'Content-Type': 'application/json' } 
+    });
+  }
+
+  return new Response(JSON.stringify({ received: true }), { 
+    status: 200, 
+    headers: { 'Content-Type': 'application/json' } 
+  });
+}
+```
+
+### Understanding the Signature
+
+The signature is generated using:
+- Your webhook secret (from BraidPay dashboard)
+- The payment destination address (`toAddress`)
+- The payment amount (`amount`)
+
+It is critical to verify the signature to ensure the request came from BraidPay and wasn't tampered with.
+
+### Manual Verification
+
+If you need to manually verify signatures, you can use the `verifyWebhookSignature` function:
+
+```typescript
+import { verifyWebhookSignature } from 'braidpay-components';
+
+const isValid = verifyWebhookSignature(
+  process.env.BRAIDPAY_WEBHOOK_SECRET,
+  payload.toAddress,
+  payload.amount,
+  signature
+);
+
+if (!isValid) {
+  // Handle invalid signature...
+}
+```
+
+### Webhook Retry Policy
+
+BraidPay will retry webhook delivery if your endpoint fails to respond with a 2xx status code or times out (10 seconds). The retry schedule is:
+- 1st retry: 1 minute after initial failure
+- 2nd retry: 5 minutes after previous attempt
+- 3rd retry: 15 minutes after previous attempt
+- 4th retry: 30 minutes after previous attempt
+- 5th retry: 1 hour after previous attempt
+
+After 5 failed attempts, the webhook will be marked as failed with no further retries.
+
+### Best Practices for Webhook Handling
+
+1. **Always verify signatures** - Use the provided verification functions
+2. **Respond quickly** - Return a 200 status code as soon as possible
+3. **Process asynchronously** - Handle the webhook data after responding
+4. **Implement idempotency** - Use `paymentID` to prevent duplicate processing
+5. **Store webhook secret securely** - Never expose it in client-side code
+6. **Use environment variables** - Store the webhook secret in `.env.local`
+7. **Monitor webhook deliveries** - Check the BraidPay dashboard for delivery status
+
+## Server vs. Client Components
+
+When using BraidPay components with Next.js App Router, it's important to understand which parts of the package should be used in server components versus client components:
+
+### Server-Side Usage (Server Components)
+
+The webhook processing and signature verification should be used in server contexts only:
+
+```tsx
+// app/api/webhooks/braidpay/route.ts
+import { processBraidPayWebhook } from 'braidpay-components';
+
+export async function POST(req: Request) {
+  const signature = req.headers.get('x-webhook-signature');
+  const payload = await req.json();
+  
+  const result = await processBraidPayWebhook(
+    payload,
+    signature,
+    {
+      webhookSecret: process.env.BRAIDPAY_WEBHOOK_SECRET,
+      onCompleted: async (paymentData) => {
+        // Server-side payment processing
+        await updateDatabase(paymentData);
+      }
+    }
+  );
+  
+  return new Response(JSON.stringify({ success: result.success }), {
+    status: result.success ? 200 : 400,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+```
+
+### Client-Side Usage (Client Components)
+
+UI components and payment handling should be used in client components:
+
+```tsx
+"use client"
+import { PaymentForm, BraidPayButton } from 'braidpay-components';
+
+export default function CheckoutPage() {
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold">Checkout</h1>
+      
+      <PaymentForm
+        paymentLinkID="your-payment-link-id"
+        paymentLink="https://app.braidpay.com/p/your-payment-link"
+        productName="Premium Subscription"
+        price={99}
+        onPaymentComplete={(status) => {
+          console.log('Payment completed:', status);
+        }}
+      />
+    </div>
+  );
+}
+```
+
+### API Route for Payment Verification
+
+Create an API route for handling client-side payment verification:
+
+```typescript
+// app/api/check-payment-status/route.ts
+import { verifyPaymentStatus } from '@/lib/payments';
+import { NextResponse } from 'next/server';
+
+export async function POST(req: Request) {
+  const { email, paymentLinkID } = await req.json();
+  
+  if (!email || !paymentLinkID) {
+    return NextResponse.json(
+      { success: false, error: 'Missing required fields' },
+      { status: 400 }
+    );
+  }
+  
+  try {
+    // Check your database or payment service
+    const paymentStatus = await verifyPaymentStatus(email, paymentLinkID);
+    
+    return NextResponse.json(paymentStatus);
+  } catch (error) {
+    console.error('Error checking payment status:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to check payment status' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+By separating server and client code clearly, you'll avoid the "Dynamic require of 'buffer'" and "Can't find variable: global" errors that can occur when Node.js-specific code runs in the browser.
 
 ---
 

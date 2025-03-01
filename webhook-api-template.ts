@@ -1,39 +1,57 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { 
-  BraidPayWebhookPayload, 
-  processBraidPayWebhook 
-} from './webhook-handler';
-
 /**
- * Example BraidPay webhook API route handler
+ * BraidPay Webhook API Route Template for Next.js App Router
  * 
- * This is a template that you can use in your Next.js app/api/braidpay-webhook/route.ts file
- * Customize the onCompleted and onPending functions to handle payments as needed
+ * Copy this file to your Next.js project as:
+ * app/api/braidpay-webhook/route.ts
+ * 
+ * Make sure to:
+ * 1. Add BRAIDPAY_WEBHOOK_SECRET to your .env.local file
+ * 2. Update the onCompleted function with your business logic
+ * 3. Configure this webhook URL in your BraidPay dashboard
  */
+
+// These imports will work in your project after installing braidpay-components
+// You may need to install next if not already installed
+import type { NextRequest, NextResponse } from 'next/server';
+import type { BraidPayWebhookPayload } from 'braidpay-components';
+import { processBraidPayWebhook } from 'braidpay-components';
+
+// In this template file, we're just declaring the types for demonstration
+// You'll have the proper imports when you copy this to your Next.js project
+declare const NextResponse: any;
+
+// Optional: Track processed payments to handle duplicates
+const processedPayments = new Set<string>();
+
 export async function POST(req: NextRequest) {
   try {
-    // Get the signature from the headers
+    // Extract the signature from headers
     const signature = req.headers.get('x-webhook-signature');
-    
     if (!signature) {
-      return NextResponse.json(
-        { error: 'Missing signature' },
-        { status: 401 }
-      );
+      console.error('Missing webhook signature');
+      return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
     }
 
     // Parse the webhook payload
     const payload: BraidPayWebhookPayload = await req.json();
-    
+
+    // Validate required fields
+    if (!payload.paymentID || !payload.toAddress || !payload.amount) {
+      console.error('Webhook payload missing required fields');
+      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+    }
+
+    // Optional: Check for duplicate webhook deliveries
+    if (processedPayments.has(payload.paymentID)) {
+      console.log(`Payment ${payload.paymentID} already processed (idempotency check)`);
+      return NextResponse.json({ received: true, note: 'Already processed' });
+    }
+
     // Get the webhook secret from environment variables
     const webhookSecret = process.env.BRAIDPAY_WEBHOOK_SECRET;
-
     if (!webhookSecret) {
-      console.error('BraidPay webhook secret not configured');
-      return NextResponse.json(
-        { error: 'Configuration error' },
-        { status: 500 }
-      );
+      console.error('Webhook secret not configured in environment variables');
+      return NextResponse.json({ error: 'Configuration error' }, { status: 500 });
     }
 
     // Process the webhook
@@ -41,49 +59,73 @@ export async function POST(req: NextRequest) {
       webhookSecret,
       
       // Handle completed payments
-      onCompleted: async (payload) => {
-        if (payload.Payer_Email) {
-          const email = payload.Payer_Email.toLowerCase();
+      onCompleted: async (payment: BraidPayWebhookPayload) => {
+        try {
+          console.log(`Processing completed payment: ${payment.paymentID}`);
           
-          // TODO: Replace with your own database operations
-          console.log(`Payment completed for ${email}`);
-          console.log(`Payment ID: ${payload.paymentID}`);
-          console.log(`Amount: ${payload.amount} ${payload.token}`);
+          // IMPORTANT: Implement your business logic here
+          // Examples:
+          // - Update user subscription in database
+          // - Grant access to content
+          // - Send confirmation email
+          // - Record the transaction
           
-          // TODO: Update your database to mark the payment as completed
-          // TODO: Grant access to purchased content, send confirmation email, etc.
+          if (payment.Payer_Email) {
+            // Example: Update user in database
+            // await db.user.update({
+            //   where: { email: payment.Payer_Email.toLowerCase() },
+            //   data: { 
+            //     hasPaid: true,
+            //     amountPaid: payment.amount,
+            //     paymentDate: new Date(),
+            //     transactionId: payment.paymentID
+            //   }
+            // });
+            
+            // Example: Send confirmation email
+            // await sendEmail({
+            //   to: payment.Payer_Email,
+            //   subject: 'Payment Confirmation',
+            //   body: `Thank you for your payment of ${payment.amount} ${payment.token}`
+            // });
+          }
+          
+          // Mark as processed for idempotency
+          processedPayments.add(payment.paymentID);
+          
+        } catch (error) {
+          console.error('Error in onCompleted handler:', error);
+          // Continue processing to return 200 to BraidPay
+          // but log the error for investigation
         }
       },
       
-      // Handle pending payments (optional)
-      onPending: async (payload) => {
-        if (payload.Payer_Email) {
-          const email = payload.Payer_Email.toLowerCase();
-          
-          // TODO: Replace with your own database operations
-          console.log(`Payment pending for ${email}`);
-          console.log(`Payment ID: ${payload.paymentID}`);
-        }
+      // Optional: Handle pending payments
+      onPending: async (payment: BraidPayWebhookPayload) => {
+        console.log(`Received pending payment notification: ${payment.paymentID}`);
+        // You can implement logic for pending payments
+        // such as showing "Processing" status to users
       },
       
-      // Handle errors (optional)
-      onError: (error) => {
+      // Handle errors
+      onError: (error: Error) => {
         console.error('Webhook processing error:', error);
       }
     });
 
+    // Return appropriate response based on processing result
     if (!result.success) {
-      return NextResponse.json(
-        { error: result.error },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    return NextResponse.json({ received: true }, { status: 200 });
+    // Return success response
+    return NextResponse.json({ received: true });
+    
   } catch (error) {
-    console.error('Webhook error:', error);
+    // Catch any unexpected errors
+    console.error('Unhandled webhook error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error' }, 
       { status: 500 }
     );
   }
