@@ -1,0 +1,78 @@
+{
+  "name": "braidpay-components",
+  "version": "0.1.41",
+  "description": "React components for BraidPay Stablecoin payment integration",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "browser": {
+    "crypto": "crypto-browserify",
+    "buffer": "buffer",
+    "stream": "stream-browserify"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": [
+    "./polyfill.ts",
+    "./polyfill-inject.js"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build",
+    "clean": "rm -rf dist node_modules .turbo"
+  },
+  "keywords": [
+    "braidpay",
+    "cryptocurrency",
+    "payment",
+    "react",
+    "components",
+    "stablecoin",
+    "usdc",
+    "next.js"
+  ],
+  "author": {
+    "name": "BraidPay",
+    "url": "https://braidpay.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/braidpay/braidpay-components.git"
+  },
+  "bugs": {
+    "url": "https://github.com/braidpay/braidpay-components/issues"
+  },
+  "homepage": "https://braidpay.com",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-label": "^2.1.2",
+    "@radix-ui/react-slot": "^1.1.2",
+    "buffer": "^6.0.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "crypto-browserify": "^3.12.1",
+    "lucide-react": ">=0.476.0",
+    "process": "^0.11.10",
+    "stream-browserify": "^3.0.0",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "peerDependencies": {
+    "next": ">=13.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.7",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.3"
+  }
+}
